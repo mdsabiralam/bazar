@@ -397,6 +397,7 @@ function speakText(text){
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if(SpeechRecognition){
   const rec = new SpeechRecognition();
+  rec.lang = 'bn-BD';
   rec.continuous = false; // Android Chrome-এ continuous:true মোডে duplicate-result bug আছে
   rec.interimResults = true;
   let micWanted = false;   // ইউজার মাইক চালু রাখতে চান কিনা
