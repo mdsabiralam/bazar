@@ -1,0 +1,348 @@
+<meta charset="UTF-8">
+<title>বাংলা STT/TTS টেস্ট</title>
+<style>
+:root{
+  --bg:#f6f4ef;
+  --surface:#ffffff;
+  --ink:#1e1c19;
+  --ink-soft:#6b6459;
+  --line:#ddd6c8;
+  --accent:#1f6f5c;
+  --accent-soft:#dcece6;
+  --warn:#a8541f;
+  --warn-bg:#f6e4d6;
+  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+  --bn: 'Noto Sans Bengali', 'Siyam Rupali', 'Nirmala UI', sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15130f;
+    --surface:#1e1b16;
+    --ink:#efe9de;
+    --ink-soft:#a89b87;
+    --line:#39322a;
+    --accent:#57bfa3;
+    --accent-soft:#1c332c;
+    --warn:#e2a06a;
+    --warn-bg:#3a2a19;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15130f; --surface:#1e1b16; --ink:#efe9de; --ink-soft:#a89b87;
+  --line:#39322a; --accent:#57bfa3; --accent-soft:#1c332c; --warn:#e2a06a; --warn-bg:#3a2a19;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:var(--bn);line-height:1.55;
+  padding:20px 16px 60px;
+}
+.wrap{max-width:640px;margin:0 auto;}
+h1{font-size:22px;margin:0 0 4px;}
+.sub{color:var(--ink-soft);font-size:13.5px;margin:0 0 20px;}
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  padding:16px;margin-bottom:16px;
+}
+.card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+select,textarea,input[type=range]{
+  font-family:inherit;font-size:14px;border:1px solid var(--line);
+  border-radius:6px;padding:8px 10px;background:var(--bg);color:var(--ink);
+  width:100%;
+}
+textarea{min-height:70px;resize:vertical;}
+label.small{font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;}
+button{
+  font-family:inherit;font-size:14.5px;font-weight:600;
+  border:none;border-radius:6px;padding:12px 18px;cursor:pointer;
+  background:var(--accent);color:#fff;
+  flex:1;min-width:120px;
+}
+button.secondary{background:var(--accent-soft);color:var(--accent);}
+button:disabled{opacity:0.5;cursor:not-allowed;}
+button:active{transform:scale(0.98);}
+.mic-btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:16px;font-size:16px;
+}
+.mic-btn.listening{background:var(--warn);animation:pulse 1.2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.7;}}
+.transcript{
+  background:var(--bg);border:1px dashed var(--line);border-radius:6px;
+  padding:12px;min-height:50px;font-size:15px;margin-top:10px;white-space:pre-wrap;
+}
+.interim{color:var(--ink-soft);font-style:italic;}
+.meta{font-size:12px;color:var(--ink-soft);margin-top:6px;font-family:var(--mono);}
+.log{
+  max-height:240px;overflow-y:auto;font-size:12.5px;font-family:var(--mono);
+  background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;
+}
+.log div{padding:4px 0;border-bottom:1px solid var(--line);}
+.log div:last-child{border:none;}
+.warn-box{
+  background:var(--warn-bg);color:var(--warn);border-radius:6px;
+  padding:10px 12px;font-size:13px;margin-bottom:16px;
+}
+.range-row{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-soft);}
+.range-row span{min-width:34px;text-align:right;font-family:var(--mono);}
+</style>
+
+<div class="wrap">
+  <h1>বাংলা STT / TTS টেস্ট টুল</h1>
+  <p class="sub">মোবাইল Chrome-এ খুলুন। এটি ডিভাইসের নিজস্ব Speech Recognition ও Text-to-Speech ব্যবহার করে — কোনো API খরচ নেই।</p>
+
+  <div id="supportWarn" class="warn-box" style="display:none;"></div>
+
+  <div class="card">
+    <h2>🎙️ Speech-to-Text (কথা → লেখা)</h2>
+    <div class="row">
+      <div style="flex:1;">
+        <label class="small">ভাষা</label>
+        <select id="sttLang">
+          <option value="bn-BD">বাংলা (bn-BD)</option>
+          <option value="bn-IN">বাংলা (bn-IN)</option>
+          <option value="en-IN">English (en-IN) — তুলনার জন্য</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="align-items:center;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;">
+        <input type="checkbox" id="continuousMode" checked style="width:18px;height:18px;">
+        ক্রমাগত শোনা (auto-cut হলে নিজে থেকে আবার শুরু হবে)
+      </label>
+    </div>
+    <button id="micBtn" class="mic-btn">🎤 বলা শুরু করুন</button>
+    <div id="transcript" class="transcript">এখানে transcript দেখাবে...</div>
+    <div id="sttMeta" class="meta"></div>
+    <div id="restartCount" class="meta"></div>
+  </div>
+
+  <div class="card">
+    <h2>🔊 Text-to-Speech (লেখা → কথা)</h2>
+    <label class="small">টেক্সট লিখুন</label>
+    <textarea id="ttsText">আজকে বাজারে আলু কেজি প্রতি ত্রিশ টাকা, পেঁয়াজ চল্লিশ টাকা। আপনার জন্য বিশেষ অফার আছে।</textarea>
+    <div class="row" style="margin-top:10px;">
+      <div style="flex:1;">
+        <label class="small">Voice</label>
+        <select id="voiceSelect"><option>লোড হচ্ছে...</option></select>
+      </div>
+    </div>
+    <div class="range-row" style="margin-bottom:6px;">
+      <label class="small" style="min-width:50px;">গতি</label>
+      <input type="range" id="rateRange" min="0.5" max="2" step="0.1" value="1"><span id="rateVal">1.0</span>
+    </div>
+    <div class="range-row" style="margin-bottom:12px;">
+      <label class="small" style="min-width:50px;">Pitch</label>
+      <input type="range" id="pitchRange" min="0" max="2" step="0.1" value="1"><span id="pitchVal">1.0</span>
+    </div>
+    <div class="row">
+      <button id="speakBtn">🔊 শোনান</button>
+      <button id="echoBtn" class="secondary" disabled>🔁 STT ফলাফল শোনান</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📋 টেস্ট লগ</h2>
+    <div class="row">
+      <button id="clearLogBtn" class="secondary">লগ মুছুন</button>
+    </div>
+    <div id="log" class="log"><div style="color:var(--ink-soft);">এখনো কোনো টেস্ট হয়নি।</div></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const logBox = $('log');
+let lastTranscript = '';
+
+function logEntry(text){
+  if(logBox.children.length===1 && logBox.children[0].textContent.includes('কোনো টেস্ট')){
+    logBox.innerHTML='';
+  }
+  const t = new Date().toLocaleTimeString('bn-BD');
+  const div = document.createElement('div');
+  div.textContent = `[${t}] ${text}`;
+  logBox.prepend(div);
+}
+
+// ---------- STT ----------
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let listening = false;         // মাইক আদৌ সক্রিয় থাকা উচিত কিনা (ইউজারের ইচ্ছা)
+let sessionActive = false;     // এই মুহূর্তে recognition চলছে কিনা (browser-এর অবস্থা)
+let sttStartTime = 0;
+let sessionStartTime = 0;
+let accumulatedTranscript = '';
+let restartCount = 0;
+let restartTimer = null;
+
+if(!SpeechRecognition){
+  $('supportWarn').style.display='block';
+  $('supportWarn').textContent = 'এই ব্রাউজারে Speech Recognition সাপোর্ট নেই। Android Chrome ব্যবহার করুন।';
+  $('micBtn').disabled = true;
+} else {
+  recognition = new SpeechRecognition();
+  // Android Chrome-এ continuous:true মোডে একই ফলাফল বারবার repeat হওয়ার bug আছে,
+  // তাই continuous:false রেখে দ্রুত restart-এর উপর নির্ভর করা হচ্ছে
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 3;
+  let lastAppendedSegment = '';
+
+  recognition.onstart = () => {
+    sessionActive = true;
+    sttStartTime = performance.now();
+    sessionStartTime = performance.now();
+    $('micBtn').classList.add('listening');
+    $('micBtn').textContent = '🎤 শুনছি... (থামাতে ট্যাপ করুন)';
+  };
+
+  recognition.onresult = (event) => {
+    let interim = '', final = '';
+    let confidence = null;
+    for(let i=event.resultIndex;i<event.results.length;i++){
+      const res = event.results[i];
+      if(res.isFinal){
+        final += res[0].transcript;
+        confidence = res[0].confidence;
+      } else {
+        interim += res[0].transcript;
+      }
+    }
+    if(final){
+      const cleanFinal = final.trim();
+      const isDuplicate = cleanFinal.toLowerCase() === lastAppendedSegment.toLowerCase();
+      const latency = Math.round(performance.now()-sessionStartTime);
+      const confText = (confidence!=null && !isNaN(confidence)) ? `, confidence: ${(confidence*100).toFixed(0)}%` : '';
+      if(isDuplicate){
+        logEntry(`⏭️ ডুপ্লিকেট বাদ দেওয়া হলো: "${cleanFinal}"`);
+      } else {
+        accumulatedTranscript = (accumulatedTranscript ? accumulatedTranscript + ' ' : '') + cleanFinal;
+        lastAppendedSegment = cleanFinal;
+        lastTranscript = accumulatedTranscript;
+        $('transcript').textContent = accumulatedTranscript;
+        $('echoBtn').disabled = false;
+        $('sttMeta').textContent = `এই অংশের সময়: ~${latency}ms${confText}, lang: ${$('sttLang').value}`;
+        logEntry(`STT [${$('sttLang').value}] → "${cleanFinal}" (${latency}ms${confText})`);
+      }
+    } else if(interim){
+      $('transcript').innerHTML = accumulatedTranscript + ` <span class="interim">${interim}</span>`;
+    }
+  };
+
+  recognition.onerror = (e) => {
+    logEntry(`STT ত্রুটি: ${e.error}`);
+    $('sttMeta').textContent = `error: ${e.error}`;
+    // no-speech/network এর মতো ত্রুটিতেও onend ট্রিগার হবে, সেখানেই restart হ্যান্ডেল হচ্ছে
+  };
+
+  recognition.onend = () => {
+    sessionActive = false;
+    if(listening && $('continuousMode').checked){
+      // ব্রাউজার নিজে থেকে বন্ধ করে দিয়েছে (auto-cutoff) — কিন্তু ইউজার এখনো শুনতে চান
+      restartCount++;
+      $('restartCount').textContent = `🔁 auto-restart হয়েছে: ${restartCount} বার`;
+      logEntry(`auto-cutoff → পুনরায় শুরু হচ্ছে (#${restartCount})`);
+      restartTimer = setTimeout(() => {
+        if(listening){
+          try{ recognition.start(); } catch(e){ /* ইতিমধ্যে চালু থাকলে ইগনোর করুন */ }
+        }
+      }, 30);
+    } else {
+      $('micBtn').classList.remove('listening');
+      $('micBtn').textContent = '🎤 বলা শুরু করুন';
+    }
+  };
+
+  $('micBtn').addEventListener('click', () => {
+    if(listening){
+      listening = false;
+      clearTimeout(restartTimer);
+      recognition.stop();
+      $('micBtn').classList.remove('listening');
+      $('micBtn').textContent = '🎤 বলা শুরু করুন';
+    } else {
+      listening = true;
+      recognition.lang = $('sttLang').value;
+      accumulatedTranscript = '';
+      lastAppendedSegment = '';
+      restartCount = 0;
+      $('restartCount').textContent = '';
+      $('transcript').textContent = '';
+      try{ recognition.start(); } catch(e){ logEntry('শুরু করা যায়নি: '+e.message); }
+    }
+  });
+}
+
+// ---------- TTS ----------
+let voices = [];
+function loadVoices(){
+  voices = speechSynthesis.getVoices();
+  const sel = $('voiceSelect');
+  sel.innerHTML = '';
+  const bnVoices = voices.filter(v => v.lang.toLowerCase().startsWith('bn'));
+  const otherVoices = voices.filter(v => !v.lang.toLowerCase().startsWith('bn'));
+  if(bnVoices.length){
+    const grp = document.createElement('optgroup');
+    grp.label = 'বাংলা ভয়েস';
+    bnVoices.forEach(v=>{
+      const o=document.createElement('option');
+      o.value=v.name; o.textContent=`${v.name} (${v.lang})`;
+      grp.appendChild(o);
+    });
+    sel.appendChild(grp);
+  } else {
+    const warn = document.createElement('option');
+    warn.textContent = '⚠️ কোনো বাংলা voice পাওয়া যায়নি';
+    warn.disabled = true;
+    sel.appendChild(warn);
+  }
+  if(otherVoices.length){
+    const grp2 = document.createElement('optgroup');
+    grp2.label = 'অন্যান্য ভয়েস';
+    otherVoices.slice(0,15).forEach(v=>{
+      const o=document.createElement('option');
+      o.value=v.name; o.textContent=`${v.name} (${v.lang})`;
+      grp2.appendChild(o);
+    });
+    sel.appendChild(grp2);
+  }
+}
+speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+
+$('rateRange').addEventListener('input', e => $('rateVal').textContent = parseFloat(e.target.value).toFixed(1));
+$('pitchRange').addEventListener('input', e => $('pitchVal').textContent = parseFloat(e.target.value).toFixed(1));
+
+function speak(text){
+  if(!text.trim()) return;
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  const chosen = voices.find(v => v.name === $('voiceSelect').value);
+  if(chosen) utter.voice = chosen;
+  utter.lang = chosen ? chosen.lang : 'bn-BD';
+  utter.rate = parseFloat($('rateRange').value);
+  utter.pitch = parseFloat($('pitchRange').value);
+
+  const startT = performance.now();
+  utter.onstart = () => {
+    const latency = Math.round(performance.now()-startT);
+    logEntry(`TTS শুরু (latency ~${latency}ms) voice: ${utter.voice ? utter.voice.name : 'default'}`);
+  };
+  utter.onerror = (e) => logEntry(`TTS ত্রুটি: ${e.error}`);
+  utter.onend = () => logEntry(`TTS শেষ — "${text.slice(0,40)}${text.length>40?'...':''}"`);
+  speechSynthesis.speak(utter);
+}
+
+$('speakBtn').addEventListener('click', () => speak($('ttsText').value));
+$('echoBtn').addEventListener('click', () => speak(lastTranscript));
+$('clearLogBtn').addEventListener('click', () => {
+  logBox.innerHTML = '<div style="color:var(--ink-soft);">এখনো কোনো টেস্ট হয়নি।</div>';
+});
+
+if(!('speechSynthesis' in window)){
+  $('supportWarn').style.display='block';
+  $('supportWarn').textContent += ' Text-to-Speech-ও সাপোর্ট করছে না এই ব্রাউজারে।';
+}
+</script>

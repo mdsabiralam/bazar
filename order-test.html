@@ -1,0 +1,456 @@
+<meta charset="UTF-8">
+<title>Groq অর্ডার/দরদাম টেস্ট</title>
+<style>
+:root{
+  --bg:#ffffff; --surface:#ffffff; --ink:#0f172a; --ink-soft:#334155;
+  --line:#94a3b8; --accent:#0d9488; --accent-bg:#ccfbf1;
+  --user-bubble:#0d9488; --ai-bubble:#f1f5f9;
+  --warn:#b91c1c; --warn-bg:#fee2e2;
+  --bn: 'Noto Sans Bengali', 'Siyam Rupali', 'Nirmala UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--bn);line-height:1.5;padding:16px 14px 60px;}
+.wrap{max-width:640px;margin:0 auto;}
+h1{font-size:20px;margin:0 0 4px;font-weight:700;}
+.sub{color:var(--ink-soft);font-size:13px;margin:0 0 16px;}
+.card{background:var(--surface);border:1.5px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px;}
+.card h2{font-size:14.5px;margin:0 0 10px;font-weight:700;}
+label.small{font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;font-weight:600;}
+input[type=text],input[type=password],select,textarea{
+  font-family:inherit;font-size:15px;border:1.5px solid var(--line);border-radius:6px;
+  padding:9px 10px;background:#fff;color:var(--ink);width:100%;
+}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+button{
+  font-family:inherit;font-size:14.5px;font-weight:700;border:none;border-radius:6px;
+  padding:12px 16px;cursor:pointer;background:var(--accent);color:#fff;
+}
+button.secondary{background:var(--accent-bg);color:var(--accent);border:1.5px solid var(--accent);}
+button:disabled{opacity:0.5;}
+button.mic{background:var(--ink-soft);}
+button.mic.on{background:var(--warn);}
+.saved-badge{font-size:12px;color:var(--accent);font-weight:700;}
+
+.cart{background:var(--accent-bg);border:1.5px solid var(--accent);border-radius:8px;padding:12px;margin-bottom:14px;}
+.cart h2{color:var(--accent);}
+.cart-item{display:flex;justify-content:space-between;font-size:14.5px;padding:5px 0;border-bottom:1px solid #99f0e6;}
+.cart-item:last-child{border:none;}
+.cart-total{font-weight:700;font-size:16px;margin-top:8px;padding-top:8px;border-top:2px solid var(--accent);display:flex;justify-content:space-between;}
+.cart-empty{color:var(--ink-soft);font-size:13.5px;}
+
+.chat{max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;padding:4px;}
+.msg{max-width:82%;padding:10px 12px;border-radius:10px;font-size:15px;white-space:pre-wrap;}
+.msg.user{align-self:flex-end;background:var(--user-bubble);color:#fff;border-bottom-right-radius:2px;}
+.msg.ai{align-self:flex-start;background:var(--ai-bubble);color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:2px;}
+.msg.tool{align-self:center;background:#fef3c7;color:#78350f;font-family:var(--mono);font-size:11.5px;border-radius:6px;max-width:95%;}
+.msg-meta{font-size:10.5px;opacity:0.7;margin-top:4px;}
+
+.inputRow{display:flex;gap:8px;}
+.inputRow input{flex:1;}
+
+.log{max-height:200px;overflow-y:auto;font-size:11.5px;font-family:var(--mono);background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre-wrap;}
+.warn-box{background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:10px 12px;font-size:13px;margin-bottom:14px;}
+</style>
+
+<div class="wrap">
+  <h1>🛒 Groq দিয়ে অর্ডার ও দরদাম টেস্ট</h1>
+  <p class="sub">AI দোকানদারকে বাংলায় বলুন কী কিনতে চান, দরদাম করুন — cart ও tool-call ঠিকমতো হচ্ছে কিনা দেখুন।</p>
+
+  <div class="card">
+    <h2>⚙️ সেটআপ</h2>
+    <label class="small">Groq API Key (শুধু আপনার ডিভাইসে সংরক্ষিত থাকবে)</label>
+    <div class="row">
+      <input type="password" id="apiKey" placeholder="gsk_..." style="flex:1;">
+      <button id="saveKeyBtn" class="secondary">সংরক্ষণ</button>
+    </div>
+    <span id="keyStatus" class="saved-badge"></span>
+    <label class="small" style="margin-top:10px;">Model</label>
+    <select id="modelSelect">
+      <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+      <option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option>
+      <option value="moonshotai/kimi-k2-instruct">moonshotai/kimi-k2-instruct</option>
+      <option value="deepseek-r1-distill-llama-70b">deepseek-r1-distill-llama-70b</option>
+    </select>
+    <label class="small" style="margin-top:10px;">AI-এর ভয়েস (TTS)</label>
+    <select id="voiceSelect"><option>লোড হচ্ছে...</option></select>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-top:8px;">
+      <input type="checkbox" id="voiceToggle" checked style="width:18px;height:18px;">
+      AI-এর উত্তর জোরে শোনানো হবে
+    </label>
+  </div>
+
+  <div id="warnBox" class="warn-box" style="display:none;"></div>
+
+  <div class="cart" id="cartBox">
+    <h2>🧺 বর্তমান কার্ট</h2>
+    <div id="cartContent"><div class="cart-empty">কার্ট খালি — কিছু অর্ডার করে দেখুন</div></div>
+  </div>
+
+  <div class="card">
+    <h2>💬 কথোপকথন</h2>
+    <div id="chat" class="chat"></div>
+    <div class="inputRow">
+      <input type="text" id="msgInput" placeholder="যেমন: আমি ৫ কেজি আলু নেবো">
+      <button id="micBtn" class="mic" title="বলে লিখুন">🎤</button>
+      <button id="sendBtn">পাঠান</button>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <button id="resetBtn" class="secondary">🔄 নতুন কথোপকথন শুরু</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🔧 Tool-call raw লগ (যাচাইয়ের জন্য)</h2>
+    <div id="toolLog" class="log">এখনো কোনো tool call হয়নি।</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// ---------- সেটআপ / API Key ----------
+const savedKey = localStorage.getItem('groq_api_key');
+if(savedKey){ $('apiKey').value = savedKey; $('keyStatus').textContent = '✓ সংরক্ষিত আছে'; }
+$('saveKeyBtn').addEventListener('click', () => {
+  localStorage.setItem('groq_api_key', $('apiKey').value.trim());
+  $('keyStatus').textContent = '✓ সংরক্ষিত হলো';
+});
+
+// ---------- প্রোডাক্ট ক্যাটালগ (টেস্টের জন্য নমুনা) ----------
+const CATALOG = {
+  'আলু': { price: 30, unit: 'কেজি' },
+  'পেঁয়াজ': { price: 40, unit: 'কেজি' },
+  'চাল': { price: 55, unit: 'কেজি' },
+  'দুধ': { price: 70, unit: 'লিটার' },
+  'ডিম': { price: 7, unit: 'পিস' },
+  'ধনে পাতা': { price: 10, unit: 'আঁটি' },
+  'মিষ্টি': { price: 250, unit: 'কেজি' },
+};
+
+const SYSTEM_PROMPT = `তুমি "রহিম ভাইয়ের দোকান"-এর একজন বন্ধুত্বপূর্ণ AI দোকানদার। তুমি সবসময় বাংলায় কথা বলবে।
+
+তোমার দোকানের পণ্য ও দাম:
+${Object.entries(CATALOG).map(([name, v]) => `- ${name}: প্রতি ${v.unit} ৳${v.price}`).join('\n')}
+
+নিয়ম:
+1. কাস্টমার কিছু কিনতে চাইলে (যেমন "৫ কেজি আলু দাও") অবশ্যই add_to_cart tool কল করবে।
+2. কাস্টমার আইটেম বাদ দিতে চাইলে remove_from_cart tool কল করবে।
+3. দরদামের ক্ষেত্রে: কাস্টমার যদি তালিকার দামের চেয়ে কম দাম বলে, তুমি ভদ্রভাবে জানাবে যে এটাই সঠিক দাম (প্ল্যাটফর্ম ফি সহ), এবং দাম পরিবর্তন করবে না। ছোট মিষ্টি কথায় (যেমন ২-৩ টাকা কম, বা বাল্ক ডিসকাউন্ট প্রশ্নে) বিনয়ীভাবে ব্যাখ্যা দাও কিন্তু বাস্তব দাম বদলাবে না।
+4. কাস্টমার "অর্ডার কনফার্ম করো" বা এই জাতীয় কিছু বললে create_order tool কল করবে।
+5. তালিকায় নেই এমন পণ্য চাইলে বিনয়ীভাবে বলবে এটা দোকানে নেই।
+6. উত্তর সংক্ষিপ্ত ও স্বাভাবিক কথোপকথনের মতো রাখবে, তালিকা/markdown ব্যবহার করবে না।`;
+
+const TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'add_to_cart',
+      description: 'কাস্টমার কোনো পণ্য কিনতে চাইলে কার্টে যোগ করে',
+      parameters: {
+        type: 'object',
+        properties: {
+          product: { type: 'string', description: 'পণ্যের নাম, যেমন আলু, পেঁয়াজ' },
+          quantity: { type: 'number', description: 'পরিমাণ (সংখ্যা)' },
+          unit: { type: 'string', description: 'একক, যেমন কেজি, লিটার, পিস' },
+        },
+        required: ['product', 'quantity', 'unit'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remove_from_cart',
+      description: 'কার্ট থেকে কোনো পণ্য বাদ দেয়',
+      parameters: {
+        type: 'object',
+        properties: { product: { type: 'string' } },
+        required: ['product'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_order',
+      description: 'কার্টের বর্তমান অবস্থা দিয়ে চূড়ান্ত অর্ডার তৈরি করে',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+];
+
+// ---------- State ----------
+let cart = []; // {product, quantity, unit, price}
+let messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+let orderConfirmed = null;
+
+function renderCart(){
+  const box = $('cartContent');
+  if(cart.length === 0){
+    box.innerHTML = '<div class="cart-empty">কার্ট খালি — কিছু অর্ডার করে দেখুন</div>';
+    return;
+  }
+  let total = 0;
+  let html = '';
+  cart.forEach(item => {
+    const lineTotal = item.price * item.quantity;
+    total += lineTotal;
+    html += `<div class="cart-item"><span>${item.product} — ${item.quantity} ${item.unit}</span><span>৳${lineTotal}</span></div>`;
+  });
+  html += `<div class="cart-total"><span>মোট</span><span>৳${total}</span></div>`;
+  if(orderConfirmed){
+    html += `<div style="margin-top:8px;color:#065f46;font-weight:700;">✅ অর্ডার কনফার্ম হয়েছে</div>`;
+  }
+  box.innerHTML = html;
+}
+
+function addChatBubble(role, text, meta){
+  const chat = $('chat');
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.textContent = text;
+  if(meta){
+    const m = document.createElement('div');
+    m.className = 'msg-meta';
+    m.textContent = meta;
+    div.appendChild(m);
+  }
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addToolBubble(text){
+  const chat = $('chat');
+  const div = document.createElement('div');
+  div.className = 'msg tool';
+  div.textContent = text;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function logTool(obj){
+  const box = $('toolLog');
+  if(box.textContent.includes('এখনো কোনো')) box.textContent = '';
+  box.textContent = JSON.stringify(obj, null, 2) + '\n\n' + box.textContent;
+}
+
+// ---------- Tool execution (লোকাল, সিমুলেটেড) ----------
+function executeTool(name, args){
+  if(name === 'add_to_cart'){
+    const catalogItem = CATALOG[args.product];
+    const price = catalogItem ? catalogItem.price : null;
+    if(price === null){
+      return { success: false, message: `${args.product} আমাদের দোকানে নেই।` };
+    }
+    cart.push({ product: args.product, quantity: args.quantity, unit: args.unit || catalogItem.unit, price });
+    renderCart();
+    return { success: true, message: `${args.quantity} ${args.unit} ${args.product} কার্টে যোগ হলো, দাম প্রতি ${catalogItem.unit} ৳${price}` };
+  }
+  if(name === 'remove_from_cart'){
+    const before = cart.length;
+    cart = cart.filter(i => i.product !== args.product);
+    renderCart();
+    return { success: cart.length < before, message: cart.length < before ? `${args.product} বাদ দেওয়া হলো` : `${args.product} কার্টে পাওয়া যায়নি` };
+  }
+  if(name === 'create_order'){
+    if(cart.length === 0) return { success: false, message: 'কার্ট খালি, অর্ডার তৈরি করা যাবে না' };
+    orderConfirmed = { items: [...cart], total: cart.reduce((s,i)=>s+i.price*i.quantity,0) };
+    renderCart();
+    return { success: true, order: orderConfirmed, message: 'অর্ডার কনফার্ম হয়েছে' };
+  }
+  return { success: false, message: 'অজানা tool' };
+}
+
+// ---------- Groq API কল ----------
+async function callGroq(){
+  const apiKey = $('apiKey').value.trim();
+  if(!apiKey){
+    $('warnBox').style.display = 'block';
+    $('warnBox').textContent = 'আগে API Key দিয়ে সংরক্ষণ করুন।';
+    return null;
+  }
+  $('warnBox').style.display = 'none';
+  const startT = performance.now();
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: $('modelSelect').value,
+      messages,
+      tools: TOOLS,
+      tool_choice: 'auto',
+      temperature: 0.4,
+    }),
+  });
+  const latency = Math.round(performance.now() - startT);
+  if(!res.ok){
+    const errText = await res.text();
+    throw new Error(`API ত্রুটি (${res.status}): ${errText.slice(0,200)}`);
+  }
+  const data = await res.json();
+  return { data, latency };
+}
+
+async function handleTurn(){
+  let rounds = 0;
+  while(rounds < 5){
+    rounds++;
+    let result;
+    try{
+      result = await callGroq();
+    } catch(e){
+      addChatBubble('ai', '⚠️ ত্রুটি: ' + e.message);
+      return;
+    }
+    if(!result) return;
+    const { data, latency } = result;
+    const choice = data.choices[0];
+    const msg = choice.message;
+    messages.push(msg);
+
+    if(msg.tool_calls && msg.tool_calls.length){
+      for(const tc of msg.tool_calls){
+        const args = JSON.parse(tc.function.arguments || '{}');
+        logTool({ tool: tc.function.name, args });
+        const toolResult = executeTool(tc.function.name, args);
+        logTool({ tool: tc.function.name, result: toolResult });
+        addToolBubble(`🔧 ${tc.function.name}(${JSON.stringify(args)}) → ${toolResult.message}`);
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(toolResult),
+        });
+      }
+      continue; // আবার মডেলকে জিজ্ঞেস করো tool result দেখে চূড়ান্ত উত্তরের জন্য
+    } else {
+      const replyText = msg.content || '(খালি উত্তর)';
+      addChatBubble('ai', replyText, `${latency}ms, model: ${$('modelSelect').value}`);
+      speakText(replyText);
+      return;
+    }
+  }
+  addChatBubble('ai', '⚠️ অনেকগুলো tool-call loop হয়ে গেছে, থামানো হলো।');
+}
+
+$('sendBtn').addEventListener('click', async () => {
+  const text = $('msgInput').value.trim();
+  if(!text) return;
+  addChatBubble('user', text);
+  messages.push({ role: 'user', content: text });
+  $('msgInput').value = '';
+  $('sendBtn').disabled = true;
+  await handleTurn();
+  $('sendBtn').disabled = false;
+});
+$('msgInput').addEventListener('keydown', (e) => { if(e.key === 'Enter') $('sendBtn').click(); });
+
+$('resetBtn').addEventListener('click', () => {
+  messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+  cart = [];
+  orderConfirmed = null;
+  renderCart();
+  $('chat').innerHTML = '';
+  $('toolLog').textContent = 'এখনো কোনো tool call হয়নি।';
+});
+
+// ---------- TTS (AI-এর উত্তর জোরে শোনানো) ----------
+let ttsVoices = [];
+function loadTtsVoices(){
+  ttsVoices = speechSynthesis.getVoices();
+  const sel = $('voiceSelect');
+  sel.innerHTML = '';
+  const bnVoices = ttsVoices.filter(v => v.lang.toLowerCase().startsWith('bn'));
+  const localBn = bnVoices.filter(v => /local/i.test(v.name) || /local/i.test(v.voiceURI||''));
+  const preferred = localBn.length ? localBn : bnVoices;
+  if(bnVoices.length){
+    bnVoices.forEach(v=>{
+      const o=document.createElement('option');
+      o.value=v.name; o.textContent=`${v.name} (${v.lang})`;
+      sel.appendChild(o);
+    });
+    // ডিফল্টভাবে local ভয়েস বেছে নাও যদি থাকে
+    if(preferred.length) sel.value = preferred[0].name;
+  } else {
+    const o = document.createElement('option');
+    o.textContent = '⚠️ বাংলা ভয়েস পাওয়া যায়নি';
+    sel.appendChild(o);
+  }
+}
+speechSynthesis.onvoiceschanged = loadTtsVoices;
+loadTtsVoices();
+
+function speakText(text){
+  if(!$('voiceToggle').checked || !text) return;
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  const chosen = ttsVoices.find(v => v.name === $('voiceSelect').value);
+  if(chosen) utter.voice = chosen;
+  utter.lang = chosen ? chosen.lang : 'bn-BD';
+  speechSynthesis.speak(utter);
+}
+
+// ---------- মাইক (continuous — auto-cutoff হলে নিজে থেকেই আবার শুরু হবে) ----------
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if(SpeechRecognition){
+  const rec = new SpeechRecognition();
+  rec.continuous = false; // Android Chrome-এ continuous:true মোডে duplicate-result bug আছে
+  rec.interimResults = true;
+  let micWanted = false;   // ইউজার মাইক চালু রাখতে চান কিনা
+  let accumulated = '';
+  let lastSegment = '';
+  let restartTimer = null;
+
+  rec.onstart = () => { $('micBtn').classList.add('on'); };
+
+  rec.onresult = (e) => {
+    let interim = '', final = '';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    if(final){
+      const clean = final.trim();
+      if(clean.toLowerCase() !== lastSegment.toLowerCase()){
+        accumulated = (accumulated ? accumulated + ' ' : '') + clean;
+        lastSegment = clean;
+        $('msgInput').value = accumulated;
+      }
+    } else if(interim){
+      $('msgInput').value = (accumulated ? accumulated + ' ' : '') + interim;
+    }
+  };
+
+  rec.onerror = () => {};
+
+  rec.onend = () => {
+    if(micWanted){
+      restartTimer = setTimeout(() => {
+        if(micWanted){ try{ rec.start(); } catch(e){} }
+      }, 30);
+    } else {
+      $('micBtn').classList.remove('on');
+    }
+  };
+
+  $('micBtn').addEventListener('click', () => {
+    if(micWanted){
+      micWanted = false;
+      clearTimeout(restartTimer);
+      rec.stop();
+      $('micBtn').classList.remove('on');
+    } else {
+      micWanted = true;
+      accumulated = '';
+      lastSegment = '';
+      $('msgInput').value = '';
+      try{ rec.start(); } catch(e){}
+    }
+  });
+} else {
+  $('micBtn').disabled = true;
+}
+</script>
