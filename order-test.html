@@ -134,12 +134,14 @@ const SYSTEM_PROMPT = `তুমি "রহিম ভাইয়ের দো�
 ${Object.entries(CATALOG).map(([name, v]) => `- ${name}: প্রতি ${v.unit} ৳${v.price}`).join('\n')}
 
 নিয়ম:
-1. কাস্টমার কিছু কিনতে চাইলে (যেমন "৫ কেজি আলু দাও") অবশ্যই add_to_cart tool কল করবে।
-2. কাস্টমার আইটেম বাদ দিতে চাইলে remove_from_cart tool কল করবে।
-3. দরদামের ক্ষেত্রে: কাস্টমার যদি তালিকার দামের চেয়ে কম দাম বলে, তুমি ভদ্রভাবে জানাবে যে এটাই সঠিক দাম (প্ল্যাটফর্ম ফি সহ), এবং দাম পরিবর্তন করবে না। ছোট মিষ্টি কথায় (যেমন ২-৩ টাকা কম, বা বাল্ক ডিসকাউন্ট প্রশ্নে) বিনয়ীভাবে ব্যাখ্যা দাও কিন্তু বাস্তব দাম বদলাবে না।
-4. কাস্টমার "অর্ডার কনফার্ম করো" বা এই জাতীয় কিছু বললে create_order tool কল করবে।
-5. তালিকায় নেই এমন পণ্য চাইলে বিনয়ীভাবে বলবে এটা দোকানে নেই।
-6. উত্তর সংক্ষিপ্ত ও স্বাভাবিক কথোপকথনের মতো রাখবে, তালিকা/markdown ব্যবহার করবে না।`;
+1. কাস্টমার কিছু কিনতে চাইলে ও একটা নির্দিষ্ট সংখ্যার পরিমাণ বলে দিলে (যেমন "৫ কেজি আলু দাও") অবশ্যই add_to_cart tool কল করবে।
+2. কাস্টমার শুধু জিজ্ঞেস করলে (যেমন "আলু আছে?", "আলুর দাম কত?") কিন্তু পরিমাণ না বললে, tool কল করবে না — শুধু সাধারণ কথায় উত্তর দেবে এবং কত পরিমাণ লাগবে জিজ্ঞেস করবে। পরিমাণ না জেনে কখনো add_to_cart কল করবে না।
+3. add_to_cart কল করার সময় quantity ফিল্ড অবশ্যই একটা প্লেইন সংখ্যা হবে (যেমন 5), কোনো টেক্সট/ইউনিট/উদ্ধৃতি চিহ্ন ছাড়া।
+4. কাস্টমার আইটেম বাদ দিতে চাইলে remove_from_cart tool কল করবে।
+5. দরদামের ক্ষেত্রে: কাস্টমার যদি তালিকার দামের চেয়ে কম দাম বলে, তুমি ভদ্রভাবে জানাবে যে এটাই সঠিক দাম (প্ল্যাটফর্ম ফি সহ), এবং দাম পরিবর্তন করবে না। ছোট মিষ্টি কথায় (যেমন ২-৩ টাকা কম, বা বাল্ক ডিসকাউন্ট প্রশ্নে) বিনয়ীভাবে ব্যাখ্যা দাও কিন্তু বাস্তব দাম বদলাবে না।
+6. কাস্টমার "অর্ডার কনফার্ম করো" বা এই জাতীয় কিছু বললে create_order tool কল করবে।
+7. তালিকায় নেই এমন পণ্য চাইলে বিনয়ীভাবে বলবে এটা দোকানে নেই।
+8. উত্তর সংক্ষিপ্ত ও স্বাভাবিক কথোপকথনের মতো রাখবে, তালিকা/markdown ব্যবহার করবে না।`;
 
 const TOOLS = [
   {
@@ -151,7 +153,7 @@ const TOOLS = [
         type: 'object',
         properties: {
           product: { type: 'string', description: 'পণ্যের নাম, যেমন আলু, পেঁয়াজ' },
-          quantity: { type: 'number', description: 'পরিমাণ (সংখ্যা)' },
+          quantity: { type: ['number', 'string'], description: 'পরিমাণ, প্লেইন সংখ্যা হিসেবে (যেমন 5)' },
           unit: { type: 'string', description: 'একক, যেমন কেজি, লিটার, পিস' },
         },
         required: ['product', 'quantity', 'unit'],
@@ -235,6 +237,15 @@ function logTool(obj){
   box.textContent = JSON.stringify(obj, null, 2) + '\n\n' + box.textContent;
 }
 
+// বাংলা সংখ্যা (০-৯) ও যেকোনো টেক্সট quantity-কে নির্ভরযোগ্যভাবে সংখ্যায় রূপান্তর করে
+function parseQuantity(raw){
+  const bnDigits = '০১২৩৪৫৬৭৮৯';
+  let s = String(raw).trim();
+  s = s.replace(/[০-৯]/g, (d) => bnDigits.indexOf(d));
+  const match = s.match(/-?\d+(\.\d+)?/);
+  return match ? parseFloat(match[0]) : NaN;
+}
+
 // ---------- Tool execution (লোকাল, সিমুলেটেড) ----------
 function executeTool(name, args){
   if(name === 'add_to_cart'){
@@ -243,9 +254,13 @@ function executeTool(name, args){
     if(price === null){
       return { success: false, message: `${args.product} আমাদের দোকানে নেই।` };
     }
-    cart.push({ product: args.product, quantity: args.quantity, unit: args.unit || catalogItem.unit, price });
+    const quantity = parseQuantity(args.quantity);
+    if(!quantity || isNaN(quantity) || quantity <= 0){
+      return { success: false, message: `পরিমাণ বোঝা যায়নি ("${args.quantity}"), আবার জিজ্ঞেস করুন কত পরিমাণ লাগবে।` };
+    }
+    cart.push({ product: args.product, quantity, unit: args.unit || catalogItem.unit, price });
     renderCart();
-    return { success: true, message: `${args.quantity} ${args.unit} ${args.product} কার্টে যোগ হলো, দাম প্রতি ${catalogItem.unit} ৳${price}` };
+    return { success: true, message: `${quantity} ${args.unit} ${args.product} কার্টে যোগ হলো, দাম প্রতি ${catalogItem.unit} ৳${price}` };
   }
   if(name === 'remove_from_cart'){
     const before = cart.length;
