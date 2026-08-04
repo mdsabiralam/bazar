@@ -336,17 +336,26 @@ async function handleTurn(){
   addChatBubble('ai', '⚠️ অনেকগুলো tool-call loop হয়ে গেছে, থামানো হলো।');
 }
 
-$('sendBtn').addEventListener('click', async () => {
-  const text = $('msgInput').value.trim();
-  if(!text) return;
+// ---------- বার্তা পাঠানো (ম্যানুয়াল ও মাইক দুটোর জন্যই একই ফাংশন) ----------
+let isProcessing = false;
+let micResetBuffer = () => {}; // মাইক ব্লক নিচে এটাকে আসল ফাংশন দিয়ে বদলে দেবে
+
+async function sendMessage(rawText){
+  const text = (rawText || '').trim();
+  if(!text || isProcessing) return;
+  isProcessing = true;
+  $('sendBtn').disabled = true;
+  micResetBuffer(); // পাঠানো টেক্সট যেন মাইকের accumulated buffer-এ থেকে গিয়ে আবার repeat না হয়
   addChatBubble('user', text);
   messages.push({ role: 'user', content: text });
   $('msgInput').value = '';
-  $('sendBtn').disabled = true;
   await handleTurn();
+  isProcessing = false;
   $('sendBtn').disabled = false;
-});
-$('msgInput').addEventListener('keydown', (e) => { if(e.key === 'Enter') $('sendBtn').click(); });
+}
+
+$('sendBtn').addEventListener('click', () => sendMessage($('msgInput').value));
+$('msgInput').addEventListener('keydown', (e) => { if(e.key === 'Enter') sendMessage($('msgInput').value); });
 
 $('resetBtn').addEventListener('click', () => {
   messages = [{ role: 'system', content: SYSTEM_PROMPT }];
@@ -355,10 +364,13 @@ $('resetBtn').addEventListener('click', () => {
   renderCart();
   $('chat').innerHTML = '';
   $('toolLog').textContent = 'এখনো কোনো tool call হয়নি।';
+  micResetBuffer();
 });
 
 // ---------- TTS (AI-এর উত্তর জোরে শোনানো) ----------
 let ttsVoices = [];
+let onTtsDone = () => {}; // মাইক ব্লক এটাকে ব্যবহার করে TTS শেষে আবার শোনা শুরু করবে
+
 function loadTtsVoices(){
   ttsVoices = speechSynthesis.getVoices();
   const sel = $('voiceSelect');
@@ -372,7 +384,6 @@ function loadTtsVoices(){
       o.value=v.name; o.textContent=`${v.name} (${v.lang})`;
       sel.appendChild(o);
     });
-    // ডিফল্টভাবে local ভয়েস বেছে নাও যদি থাকে
     if(preferred.length) sel.value = preferred[0].name;
   } else {
     const o = document.createElement('option');
@@ -384,26 +395,50 @@ speechSynthesis.onvoiceschanged = loadTtsVoices;
 loadTtsVoices();
 
 function speakText(text){
-  if(!$('voiceToggle').checked || !text) return;
+  if(!$('voiceToggle').checked || !text){ onTtsDone(); return; }
   speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   const chosen = ttsVoices.find(v => v.name === $('voiceSelect').value);
   if(chosen) utter.voice = chosen;
   utter.lang = chosen ? chosen.lang : 'bn-BD';
+  utter.onend = () => onTtsDone();
+  utter.onerror = () => onTtsDone();
   speechSynthesis.speak(utter);
 }
 
-// ---------- মাইক (continuous — auto-cutoff হলে নিজে থেকেই আবার শুরু হবে) ----------
+// ---------- মাইক (continuous, নীরবতা ধরলে auto-send, TTS চলাকালে নিজে বন্ধ থাকবে যাতে নিজের গলা নিজে না শোনে) ----------
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if(SpeechRecognition){
   const rec = new SpeechRecognition();
   rec.lang = 'bn-BD';
   rec.continuous = false; // Android Chrome-এ continuous:true মোডে duplicate-result bug আছে
   rec.interimResults = true;
-  let micWanted = false;   // ইউজার মাইক চালু রাখতে চান কিনা
+
+  let micWanted = false;     // ইউজার মাইক চালু রাখতে চান কিনা (মাইক বাটন দিয়ে নিয়ন্ত্রিত)
+  let pausedForTts = false;  // TTS বলার সময় সাময়িকভাবে বন্ধ রাখা হচ্ছে কিনা
   let accumulated = '';
   let lastSegment = '';
   let restartTimer = null;
+  let silenceTimer = null;
+  const SILENCE_MS = 1400; // এতক্ষণ নতুন কথা না এলে ধরে নেওয়া হবে বলা শেষ, তখন auto-send হবে
+
+  function resetBuffer(){
+    accumulated = '';
+    lastSegment = '';
+    clearTimeout(silenceTimer);
+  }
+  micResetBuffer = resetBuffer;
+
+  function armSilenceTimer(){
+    clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(() => {
+      if(accumulated.trim()){
+        const toSend = accumulated;
+        resetBuffer();
+        sendMessage(toSend);
+      }
+    }, SILENCE_MS);
+  }
 
   rec.onstart = () => { $('micBtn').classList.add('on'); };
 
@@ -419,6 +454,7 @@ if(SpeechRecognition){
         accumulated = (accumulated ? accumulated + ' ' : '') + clean;
         lastSegment = clean;
         $('msgInput').value = accumulated;
+        armSilenceTimer(); // নতুন final এলে নীরবতার হিসাব আবার শুরু
       }
     } else if(interim){
       $('msgInput').value = (accumulated ? accumulated + ' ' : '') + interim;
@@ -428,25 +464,44 @@ if(SpeechRecognition){
   rec.onerror = () => {};
 
   rec.onend = () => {
-    if(micWanted){
+    if(micWanted && !pausedForTts){
       restartTimer = setTimeout(() => {
-        if(micWanted){ try{ rec.start(); } catch(e){} }
+        if(micWanted && !pausedForTts){ try{ rec.start(); } catch(e){} }
       }, 30);
-    } else {
+    } else if(!micWanted){
       $('micBtn').classList.remove('on');
+    }
+  };
+
+  // TTS বলা শুরু হওয়ার আগে মাইক বন্ধ করো (নিজের কণ্ঠ যেন নিজে শুনে আবার পাঠিয়ে না দেয়)
+  const originalSpeak = speakText;
+  speakText = function(text){
+    if(micWanted){
+      pausedForTts = true;
+      clearTimeout(restartTimer);
+      try{ rec.stop(); } catch(e){}
+    }
+    originalSpeak(text);
+  };
+  onTtsDone = () => {
+    pausedForTts = false;
+    if(micWanted){
+      resetBuffer();
+      try{ rec.start(); } catch(e){}
     }
   };
 
   $('micBtn').addEventListener('click', () => {
     if(micWanted){
       micWanted = false;
+      pausedForTts = false;
       clearTimeout(restartTimer);
+      clearTimeout(silenceTimer);
       rec.stop();
       $('micBtn').classList.remove('on');
     } else {
       micWanted = true;
-      accumulated = '';
-      lastSegment = '';
+      resetBuffer();
       $('msgInput').value = '';
       try{ rec.start(); } catch(e){}
     }
