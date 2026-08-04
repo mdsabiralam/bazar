@@ -414,7 +414,8 @@ function toGeminiContents(){
     } else if(m.role === 'tool'){
       let resultObj = {};
       try{ resultObj = JSON.parse(m.content); } catch(e){ resultObj = { raw: m.content }; }
-      contents.push({ role: 'function', parts: [{ functionResponse: { name: findToolNameById(m.tool_call_id), response: resultObj } }] });
+      // নতুন Gemini API version-এ tool result role: 'function' গ্রহণ করে না, 'user' লাগবে
+      contents.push({ role: 'user', parts: [{ functionResponse: { name: findToolNameById(m.tool_call_id), response: resultObj } }] });
     }
   }
   return contents;
