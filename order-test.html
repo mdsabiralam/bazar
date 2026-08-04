@@ -1,5 +1,5 @@
 <meta charset="UTF-8">
-<title>Groq অর্ডার/দরদাম টেস্ট</title>
+<title>Groq/Gemini অর্ডার/দরদাম টেস্ট</title>
 <style>
 :root{
   --bg:#ffffff; --surface:#ffffff; --ink:#0f172a; --ink-soft:#334155;
@@ -54,24 +54,35 @@ button.mic.on{background:var(--warn);}
 </style>
 
 <div class="wrap">
-  <h1>🛒 Groq দিয়ে অর্ডার ও দরদাম টেস্ট</h1>
-  <p class="sub">AI দোকানদারকে বাংলায় বলুন কী কিনতে চান, দরদাম করুন — cart ও tool-call ঠিকমতো হচ্ছে কিনা দেখুন।</p>
+  <h1>🛒 Groq/Gemini অর্ডার ও দরদাম টেস্ট</h1>
+  <p class="sub">AI দোকানদারকে বাংলায় বলুন কী কিনতে চান, দরদাম করুন — cart ও tool-call ঠিকমতো হচ্ছে কিনা দেখুন। দুই provider পাশাপাশি তুলনা করা যাবে।</p>
 
   <div class="card">
     <h2>⚙️ সেটআপ</h2>
-    <label class="small">Groq API Key (শুধু আপনার ডিভাইসে সংরক্ষিত থাকবে)</label>
-    <div class="row">
-      <input type="password" id="apiKey" placeholder="gsk_..." style="flex:1;">
-      <button id="saveKeyBtn" class="secondary">সংরক্ষণ</button>
+    <label class="small">Provider</label>
+    <select id="providerSelect" style="margin-bottom:10px;">
+      <option value="groq">Groq</option>
+      <option value="gemini">Gemini</option>
+    </select>
+
+    <div id="groqKeyRow">
+      <label class="small">Groq API Key (শুধু আপনার ডিভাইসে সংরক্ষিত থাকবে)</label>
+      <div class="row">
+        <input type="password" id="groqKey" placeholder="gsk_..." style="flex:1;">
+        <button id="saveGroqKeyBtn" class="secondary">সংরক্ষণ</button>
+      </div>
+    </div>
+    <div id="geminiKeyRow" style="display:none;">
+      <label class="small">Gemini API Key (শুধু আপনার ডিভাইসে সংরক্ষিত থাকবে)</label>
+      <div class="row">
+        <input type="password" id="geminiKey" placeholder="AIza..." style="flex:1;">
+        <button id="saveGeminiKeyBtn" class="secondary">সংরক্ষণ</button>
+      </div>
     </div>
     <span id="keyStatus" class="saved-badge"></span>
+
     <label class="small" style="margin-top:10px;">Model</label>
-    <select id="modelSelect">
-      <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
-      <option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option>
-      <option value="moonshotai/kimi-k2-instruct">moonshotai/kimi-k2-instruct</option>
-      <option value="deepseek-r1-distill-llama-70b">deepseek-r1-distill-llama-70b</option>
-    </select>
+    <select id="modelSelect"></select>
     <label class="small" style="margin-top:10px;">AI-এর ভয়েস (TTS)</label>
     <select id="voiceSelect"><option>লোড হচ্ছে...</option></select>
     <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-top:8px;">
@@ -109,12 +120,43 @@ button.mic.on{background:var(--warn);}
 <script>
 const $ = id => document.getElementById(id);
 
-// ---------- সেটআপ / API Key ----------
-const savedKey = localStorage.getItem('groq_api_key');
-if(savedKey){ $('apiKey').value = savedKey; $('keyStatus').textContent = '✓ সংরক্ষিত আছে'; }
-$('saveKeyBtn').addEventListener('click', () => {
-  localStorage.setItem('groq_api_key', $('apiKey').value.trim());
-  $('keyStatus').textContent = '✓ সংরক্ষিত হলো';
+// ---------- সেটআপ / Provider / API Key ----------
+const MODELS = {
+  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'moonshotai/kimi-k2-instruct', 'deepseek-r1-distill-llama-70b'],
+  gemini: ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+};
+function provider(){ return $('providerSelect').value; }
+
+function refreshModelOptions(){
+  const sel = $('modelSelect');
+  sel.innerHTML = '';
+  MODELS[provider()].forEach(m => {
+    const o = document.createElement('option');
+    o.value = m; o.textContent = m;
+    sel.appendChild(o);
+  });
+}
+refreshModelOptions();
+
+const savedGroqKey = localStorage.getItem('groq_api_key');
+if(savedGroqKey) $('groqKey').value = savedGroqKey;
+const savedGeminiKey = localStorage.getItem('gemini_api_key');
+if(savedGeminiKey) $('geminiKey').value = savedGeminiKey;
+
+$('saveGroqKeyBtn').addEventListener('click', () => {
+  localStorage.setItem('groq_api_key', $('groqKey').value.trim());
+  $('keyStatus').textContent = '✓ Groq key সংরক্ষিত হলো';
+});
+$('saveGeminiKeyBtn').addEventListener('click', () => {
+  localStorage.setItem('gemini_api_key', $('geminiKey').value.trim());
+  $('keyStatus').textContent = '✓ Gemini key সংরক্ষিত হলো';
+});
+
+$('providerSelect').addEventListener('change', () => {
+  refreshModelOptions();
+  $('groqKeyRow').style.display = provider() === 'groq' ? '' : 'none';
+  $('geminiKeyRow').style.display = provider() === 'gemini' ? '' : 'none';
+  $('keyStatus').textContent = '';
 });
 
 // ---------- প্রোডাক্ট ক্যাটালগ (টেস্টের জন্য নমুনা) ----------
@@ -182,6 +224,33 @@ const TOOLS = [
     },
   },
 ];
+
+// ---------- Gemini-এর জন্য tool schema রূপান্তর (Gemini টাইপ আপারকেসে চায়: STRING, NUMBER, OBJECT...) ----------
+function toGeminiSchema(schema){
+  if(!schema || typeof schema !== 'object') return schema;
+  const out = {};
+  for(const [k, v] of Object.entries(schema)){
+    if(k === 'type'){
+      const t = Array.isArray(v) ? v[0] : v; // Gemini একাধিক টাইপ (union) সাপোর্ট করে না, প্রথমটা নেওয়া হলো
+      out.type = String(t).toUpperCase();
+    } else if(k === 'properties'){
+      out.properties = {};
+      for(const [pk, pv] of Object.entries(v)) out.properties[pk] = toGeminiSchema(pv);
+    } else if(k === 'items'){
+      out.items = toGeminiSchema(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+const GEMINI_TOOLS = [{
+  function_declarations: TOOLS.map(t => ({
+    name: t.function.name,
+    description: t.function.description,
+    parameters: toGeminiSchema(t.function.parameters),
+  })),
+}];
 
 // ---------- State ----------
 let cart = []; // {product, quantity, unit, price}
@@ -278,15 +347,15 @@ function executeTool(name, args){
   return { success: false, message: 'অজানা tool' };
 }
 
-// ---------- Groq API কল ----------
+// ---------- Warn helper ----------
+function warn(msg){ $('warnBox').style.display = 'block'; $('warnBox').textContent = msg; }
+function clearWarn(){ $('warnBox').style.display = 'none'; }
+
+// ---------- Groq API কল (OpenAI-compatible format) ----------
 async function callGroq(){
-  const apiKey = $('apiKey').value.trim();
-  if(!apiKey){
-    $('warnBox').style.display = 'block';
-    $('warnBox').textContent = 'আগে API Key দিয়ে সংরক্ষণ করুন।';
-    return null;
-  }
-  $('warnBox').style.display = 'none';
+  const apiKey = $('groqKey').value.trim();
+  if(!apiKey){ warn('আগে Groq API Key দিয়ে সংরক্ষণ করুন।'); return null; }
+  clearWarn();
   const startT = performance.now();
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -308,10 +377,100 @@ async function callGroq(){
     if(res.status === 429){
       throw new Error(`এই মডেলের আজকের free-tier টোকেন সীমা শেষ হয়ে গেছে। উপরে অন্য একটা মডেল (যেমন llama-3.1-8b-instant) বেছে চালিয়ে যান, অথবা আগামীকাল আবার চেষ্টা করুন।`);
     }
-    throw new Error(`API ত্রুটি (${res.status}): ${errText.slice(0,200)}`);
+    throw new Error(`Groq API ত্রুটি (${res.status}): ${errText.slice(0,200)}`);
   }
   const data = await res.json();
-  return { data, latency };
+  return { message: data.choices[0].message, latency };
+}
+
+// ---------- messages (OpenAI-ফরম্যাট) কে Gemini-এর contents ফরম্যাটে রূপান্তর ----------
+function findToolNameById(id){
+  for(const m of messages){
+    if(m.role === 'assistant' && m.tool_calls){
+      const found = m.tool_calls.find(tc => tc.id === id);
+      if(found) return found.function.name;
+    }
+  }
+  return 'unknown_tool';
+}
+function toGeminiContents(){
+  const contents = [];
+  for(const m of messages){
+    if(m.role === 'system') continue; // system_instruction দিয়ে আলাদাভাবে পাঠানো হয়
+    if(m.role === 'user'){
+      contents.push({ role: 'user', parts: [{ text: m.content || '' }] });
+    } else if(m.role === 'assistant'){
+      const parts = [];
+      if(m.content) parts.push({ text: m.content });
+      if(m.tool_calls){
+        m.tool_calls.forEach(tc => {
+          let args = {};
+          try{ args = JSON.parse(tc.function.arguments || '{}'); } catch(e){}
+          parts.push({ functionCall: { name: tc.function.name, args } });
+        });
+      }
+      if(parts.length === 0) parts.push({ text: '' });
+      contents.push({ role: 'model', parts });
+    } else if(m.role === 'tool'){
+      let resultObj = {};
+      try{ resultObj = JSON.parse(m.content); } catch(e){ resultObj = { raw: m.content }; }
+      contents.push({ role: 'function', parts: [{ functionResponse: { name: findToolNameById(m.tool_call_id), response: resultObj } }] });
+    }
+  }
+  return contents;
+}
+
+// ---------- Gemini API কল ----------
+async function callGemini(){
+  const apiKey = $('geminiKey').value.trim();
+  if(!apiKey){ warn('আগে Gemini API Key দিয়ে সংরক্ষণ করুন।'); return null; }
+  clearWarn();
+  const model = $('modelSelect').value;
+  const startT = performance.now();
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: toGeminiContents(),
+      tools: GEMINI_TOOLS,
+      generationConfig: { temperature: 0.4 },
+    }),
+  });
+  const latency = Math.round(performance.now() - startT);
+  if(!res.ok){
+    const errText = await res.text();
+    if(res.status === 429){
+      throw new Error(`এই মডেলের আজকের free/rate সীমা শেষ হয়ে গেছে। অন্য একটা Gemini মডেল বেছে নিন বা পরে চেষ্টা করুন।`);
+    }
+    throw new Error(`Gemini API ত্রুটি (${res.status}): ${errText.slice(0,300)}`);
+  }
+  const data = await res.json();
+  const candidate = data.candidates && data.candidates[0];
+  if(!candidate || !candidate.content){
+    const reason = candidate ? candidate.finishReason : 'no candidate';
+    throw new Error(`Gemini থেকে ব্যবহারযোগ্য উত্তর আসেনি (${reason})`);
+  }
+  const parts = candidate.content.parts || [];
+  let text = '';
+  const toolCalls = [];
+  parts.forEach((p, i) => {
+    if(p.text) text += p.text;
+    if(p.functionCall){
+      toolCalls.push({
+        id: `gm_${Date.now()}_${i}`,
+        type: 'function',
+        function: { name: p.functionCall.name, arguments: JSON.stringify(p.functionCall.args || {}) },
+      });
+    }
+  });
+  const message = { role: 'assistant', content: text || null };
+  if(toolCalls.length) message.tool_calls = toolCalls;
+  return { message, latency };
+}
+
+async function callProvider(){
+  return provider() === 'gemini' ? await callGemini() : await callGroq();
 }
 
 async function handleTurn(){
@@ -320,15 +479,13 @@ async function handleTurn(){
     rounds++;
     let result;
     try{
-      result = await callGroq();
+      result = await callProvider();
     } catch(e){
       addChatBubble('ai', '⚠️ ত্রুটি: ' + e.message);
       return;
     }
     if(!result) return;
-    const { data, latency } = result;
-    const choice = data.choices[0];
-    const msg = choice.message;
+    const { message: msg, latency } = result;
     messages.push(msg);
 
     if(msg.tool_calls && msg.tool_calls.length){
@@ -347,7 +504,7 @@ async function handleTurn(){
       continue; // আবার মডেলকে জিজ্ঞেস করো tool result দেখে চূড়ান্ত উত্তরের জন্য
     } else {
       const replyText = msg.content || '(খালি উত্তর)';
-      addChatBubble('ai', replyText, `${latency}ms, model: ${$('modelSelect').value}`);
+      addChatBubble('ai', replyText, `${latency}ms, ${provider()}: ${$('modelSelect').value}`);
       speakText(replyText);
       return;
     }
