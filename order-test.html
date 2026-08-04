@@ -420,7 +420,7 @@ if(SpeechRecognition){
   let lastSegment = '';
   let restartTimer = null;
   let silenceTimer = null;
-  const SILENCE_MS = 1400; // এতক্ষণ নতুন কথা না এলে ধরে নেওয়া হবে বলা শেষ, তখন auto-send হবে
+  const SILENCE_MS = 3500; // এতক্ষণ নতুন কথা না এলে ধরে নেওয়া হবে বলা শেষ, তখন auto-send হবে
 
   function resetBuffer(){
     accumulated = '';
