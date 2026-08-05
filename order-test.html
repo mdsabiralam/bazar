@@ -108,6 +108,7 @@ button.mic.on{background:var(--warn);}
     </div>
     <div class="row" style="margin-top:10px;">
       <button id="resetBtn" class="secondary">🔄 নতুন কথোপকথন শুরু</button>
+      <button id="copyAllBtn" class="secondary">📋 সব কপি করুন</button>
     </div>
   </div>
 
@@ -277,17 +278,24 @@ function renderCart(){
   box.innerHTML = html;
 }
 
+function nowStamp(){
+  const d = new Date();
+  return d.toLocaleTimeString('bn-BD', { hour12: false });
+}
+
 function addChatBubble(role, text, meta){
   const chat = $('chat');
   const div = document.createElement('div');
   div.className = `msg ${role}`;
+  div.dataset.time = nowStamp();
+  div.dataset.role = role;
+  div.dataset.text = text;
+  div.dataset.meta = meta || '';
   div.textContent = text;
-  if(meta){
-    const m = document.createElement('div');
-    m.className = 'msg-meta';
-    m.textContent = meta;
-    div.appendChild(m);
-  }
+  const m = document.createElement('div');
+  m.className = 'msg-meta';
+  m.textContent = meta ? `${div.dataset.time} • ${meta}` : div.dataset.time;
+  div.appendChild(m);
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
@@ -296,10 +304,67 @@ function addToolBubble(text){
   const chat = $('chat');
   const div = document.createElement('div');
   div.className = 'msg tool';
-  div.textContent = text;
+  div.dataset.time = nowStamp();
+  div.dataset.role = 'tool';
+  div.dataset.text = text;
+  div.textContent = `[${div.dataset.time}] ${text}`;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
+
+// ---------- সব কিছু এক ক্লিকে কপি (সময়, provider/model, পুরো কথোপকথন, tool-call লগ, কার্ট) ----------
+function buildFullReport(){
+  const lines = [];
+  lines.push(`Export সময়: ${new Date().toLocaleString('bn-BD')}`);
+  lines.push(`Provider: ${provider()}`);
+  lines.push(`Model: ${$('modelSelect').value}`);
+  lines.push(`Voice: ${$('voiceSelect').value || '(নেই)'}`);
+  lines.push('');
+  lines.push('===== কথোপকথন =====');
+  Array.from($('chat').children).forEach(el => {
+    const role = el.dataset.role || '?';
+    const time = el.dataset.time || '';
+    const text = el.dataset.text || el.textContent;
+    const roleLabel = role === 'user' ? 'কাস্টমার' : role === 'ai' ? 'AI' : 'TOOL';
+    lines.push(`[${time}] ${roleLabel}: ${text}${el.dataset.meta ? `  (${el.dataset.meta})` : ''}`);
+  });
+  lines.push('');
+  lines.push('===== কার্ট (শেষ অবস্থা) =====');
+  if(cart.length === 0){
+    lines.push('খালি');
+  } else {
+    cart.forEach(i => lines.push(`- ${i.product}: ${i.quantity} ${i.unit} × ৳${i.price} = ৳${i.quantity * i.price}`));
+    lines.push(`মোট: ৳${cart.reduce((s,i)=>s+i.price*i.quantity,0)}`);
+  }
+  if(orderConfirmed) lines.push('অর্ডার কনফার্ম হয়েছিল।');
+  lines.push('');
+  lines.push('===== Tool-call raw লগ =====');
+  lines.push($('toolLog').textContent);
+  return lines.join('\n');
+}
+
+function copyToClipboard(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text);
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try{ document.execCommand('copy'); } catch(e){}
+  document.body.removeChild(ta);
+  return Promise.resolve();
+}
+
+$('copyAllBtn').addEventListener('click', async () => {
+  const report = buildFullReport();
+  await copyToClipboard(report);
+  const original = $('copyAllBtn').textContent;
+  $('copyAllBtn').textContent = '✅ কপি হয়েছে!';
+  setTimeout(() => { $('copyAllBtn').textContent = original; }, 1800);
+});
 
 function logTool(obj){
   const box = $('toolLog');
@@ -393,6 +458,10 @@ function findToolNameById(id){
   }
   return 'unknown_tool';
 }
+// Gemini 3.x প্রতিটা functionCall-এর সাথে একটা thought_signature পাঠায়, যেটা পরের turn-এ
+// হুবহু ফেরত না দিলে "missing thought_signature" ত্রুটি দেয়। tool_call id ধরে সংরক্ষণ করা হচ্ছে।
+const geminiThoughtSignatures = new Map(); // id -> { key: 'thoughtSignature'|'thought_signature', value }
+
 function toGeminiContents(){
   const contents = [];
   for(const m of messages){
@@ -406,7 +475,10 @@ function toGeminiContents(){
         m.tool_calls.forEach(tc => {
           let args = {};
           try{ args = JSON.parse(tc.function.arguments || '{}'); } catch(e){}
-          parts.push({ functionCall: { name: tc.function.name, args } });
+          const fcPart = { functionCall: { name: tc.function.name, args } };
+          const sig = geminiThoughtSignatures.get(tc.id);
+          if(sig) fcPart[sig.key] = sig.value;
+          parts.push(fcPart);
         });
       }
       if(parts.length === 0) parts.push({ text: '' });
@@ -458,11 +530,14 @@ async function callGemini(){
   parts.forEach((p, i) => {
     if(p.text) text += p.text;
     if(p.functionCall){
+      const id = `gm_${Date.now()}_${i}`;
       toolCalls.push({
-        id: `gm_${Date.now()}_${i}`,
+        id,
         type: 'function',
         function: { name: p.functionCall.name, arguments: JSON.stringify(p.functionCall.args || {}) },
       });
+      const sigKey = ('thoughtSignature' in p) ? 'thoughtSignature' : (('thought_signature' in p) ? 'thought_signature' : null);
+      if(sigKey) geminiThoughtSignatures.set(id, { key: sigKey, value: p[sigKey] });
     }
   });
   const message = { role: 'assistant', content: text || null };
@@ -538,6 +613,7 @@ $('resetBtn').addEventListener('click', () => {
   messages = [{ role: 'system', content: SYSTEM_PROMPT }];
   cart = [];
   orderConfirmed = null;
+  geminiThoughtSignatures.clear();
   renderCart();
   $('chat').innerHTML = '';
   $('toolLog').textContent = 'এখনো কোনো tool call হয়নি।';
