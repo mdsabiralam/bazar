@@ -734,6 +734,7 @@ if(SpeechRecognition){
   rec.onstart = () => { $('micBtn').classList.add('on'); };
 
   rec.onresult = (e) => {
+    if(pausedForTts) return; // TTS চলাকালে/বন্ধ হওয়ার transition-এ কোনো ফলাফল গ্রহণ করবে না
     let interim = '', final = '';
     for(let i=e.resultIndex;i<e.results.length;i++){
       if(e.results[i].isFinal) final += e.results[i][0].transcript;
@@ -768,17 +769,25 @@ if(SpeechRecognition){
   const originalSpeak = speakText;
   speakText = function(text){
     if(micWanted){
-      pausedForTts = true;
+      pausedForTts = true;      // এটা সবার আগে সেট করা হচ্ছে — onresult/onend দুটোই এর উপর গার্ড করে
+      resetBuffer();            // এতক্ষণ যা জমেছিল (আংশিক/ভুল করে ধরা কিছু) মুছে ফেলা হলো
       clearTimeout(restartTimer);
       try{ rec.stop(); } catch(e){}
     }
     originalSpeak(text);
   };
+  const TTS_COOLDOWN_MS = 500; // TTS শেষ হওয়ার পরেও কিছুটা অডিও/প্রতিধ্বনি থেকে যেতে পারে, তাই সামান্য বিরতি
   onTtsDone = () => {
-    pausedForTts = false;
     if(micWanted){
-      resetBuffer();
-      try{ rec.start(); } catch(e){}
+      setTimeout(() => {
+        if(micWanted){
+          pausedForTts = false;
+          resetBuffer();
+          try{ rec.start(); } catch(e){}
+        }
+      }, TTS_COOLDOWN_MS);
+    } else {
+      pausedForTts = false;
     }
   };
 
