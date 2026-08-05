@@ -98,6 +98,11 @@ button.mic.on{background:var(--warn);}
     <div id="cartContent"><div class="cart-empty">কার্ট খালি — কিছু অর্ডার করে দেখুন</div></div>
   </div>
 
+  <div class="card" id="tokenCard">
+    <h2>🔢 টোকেন ব্যবহার (এই কথোপকথনে)</h2>
+    <div id="tokenStats" class="cart-empty">এখনো কোনো API কল হয়নি।</div>
+  </div>
+
   <div class="card">
     <h2>💬 কথোপকথন</h2>
     <div id="chat" class="chat"></div>
@@ -319,6 +324,7 @@ function buildFullReport(){
   lines.push(`Provider: ${provider()}`);
   lines.push(`Model: ${$('modelSelect').value}`);
   lines.push(`Voice: ${$('voiceSelect').value || '(নেই)'}`);
+  lines.push(`টোকেন ব্যবহার: ${sessionTokens.calls} কল, input ${sessionTokens.input} + output ${sessionTokens.output} = মোট ${sessionTokens.total}`);
   lines.push('');
   lines.push('===== কথোপকথন =====');
   Array.from($('chat').children).forEach(el => {
@@ -445,7 +451,10 @@ async function callGroq(){
     throw new Error(`Groq API ত্রুটি (${res.status}): ${errText.slice(0,200)}`);
   }
   const data = await res.json();
-  return { message: data.choices[0].message, latency };
+  const usage = data.usage
+    ? { input: data.usage.prompt_tokens || 0, output: data.usage.completion_tokens || 0, total: data.usage.total_tokens || 0 }
+    : null;
+  return { message: data.choices[0].message, latency, usage };
 }
 
 // ---------- messages (OpenAI-ফরম্যাট) কে Gemini-এর contents ফরম্যাটে রূপান্তর ----------
@@ -542,11 +551,30 @@ async function callGemini(){
   });
   const message = { role: 'assistant', content: text || null };
   if(toolCalls.length) message.tool_calls = toolCalls;
-  return { message, latency };
+  const usage = data.usageMetadata
+    ? { input: data.usageMetadata.promptTokenCount || 0, output: data.usageMetadata.candidatesTokenCount || 0, total: data.usageMetadata.totalTokenCount || 0 }
+    : null;
+  return { message, latency, usage };
 }
 
 async function callProvider(){
   return provider() === 'gemini' ? await callGemini() : await callGroq();
+}
+
+// ---------- টোকেন ব্যবহার ট্র্যাকিং ----------
+let sessionTokens = { input: 0, output: 0, total: 0, calls: 0 };
+function renderTokenStats(){
+  const box = $('tokenStats');
+  if(sessionTokens.calls === 0){
+    box.textContent = 'এখনো কোনো API কল হয়নি।';
+    box.className = 'cart-empty';
+    return;
+  }
+  box.className = '';
+  box.innerHTML = `<div class="cart-item"><span>API কল সংখ্যা</span><span>${sessionTokens.calls}</span></div>
+    <div class="cart-item"><span>Input টোকেন</span><span>${sessionTokens.input}</span></div>
+    <div class="cart-item"><span>Output টোকেন</span><span>${sessionTokens.output}</span></div>
+    <div class="cart-total"><span>মোট টোকেন</span><span>${sessionTokens.total}</span></div>`;
 }
 
 async function handleTurn(){
@@ -561,7 +589,14 @@ async function handleTurn(){
       return;
     }
     if(!result) return;
-    const { message: msg, latency } = result;
+    const { message: msg, latency, usage } = result;
+    if(usage){
+      sessionTokens.input += usage.input;
+      sessionTokens.output += usage.output;
+      sessionTokens.total += usage.total;
+      sessionTokens.calls += 1;
+      renderTokenStats();
+    }
     messages.push(msg);
 
     if(msg.tool_calls && msg.tool_calls.length){
@@ -580,7 +615,8 @@ async function handleTurn(){
       continue; // আবার মডেলকে জিজ্ঞেস করো tool result দেখে চূড়ান্ত উত্তরের জন্য
     } else {
       const replyText = msg.content || '(খালি উত্তর)';
-      addChatBubble('ai', replyText, `${latency}ms, ${provider()}: ${$('modelSelect').value}`);
+      const tokenNote = usage ? `, tokens: in ${usage.input}/out ${usage.output}` : '';
+      addChatBubble('ai', replyText, `${latency}ms, ${provider()}: ${$('modelSelect').value}${tokenNote}`);
       speakText(replyText);
       return;
     }
@@ -614,7 +650,9 @@ $('resetBtn').addEventListener('click', () => {
   cart = [];
   orderConfirmed = null;
   geminiThoughtSignatures.clear();
+  sessionTokens = { input: 0, output: 0, total: 0, calls: 0 };
   renderCart();
+  renderTokenStats();
   $('chat').innerHTML = '';
   $('toolLog').textContent = 'এখনো কোনো tool call হয়নি।';
   micResetBuffer();
