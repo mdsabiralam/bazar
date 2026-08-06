@@ -1,0 +1,223 @@
+<meta charset="UTF-8">
+<title>Mesh Group ভিডিও কল টেস্ট (৩-৫ জন)</title>
+<style>
+:root{
+  --bg:#0b0f14; --surface:#151b23; --ink:#f1f5f9; --ink-soft:#94a3b8;
+  --line:#2a3542; --accent:#0d9488; --accent-bg:#0f2e2b;
+  --warn:#ef4444; --good:#22c55e;
+  --bn: 'Noto Sans Bengali', 'Siyam Rupali', 'Nirmala UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--bn);line-height:1.5;padding:14px 12px 50px;}
+.wrap{max-width:900px;margin:0 auto;}
+h1{font-size:19px;margin:0 0 4px;font-weight:700;}
+.sub{color:var(--ink-soft);font-size:12.5px;margin:0 0 14px;}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;}
+label.small{font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;font-weight:600;}
+input[type=text]{
+  font-family:inherit;font-size:15px;border:1px solid var(--line);border-radius:6px;
+  padding:9px 10px;background:#0e141b;color:var(--ink);width:100%;
+}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+button{
+  font-family:inherit;font-size:14px;font-weight:700;border:none;border-radius:6px;
+  padding:11px 16px;cursor:pointer;background:var(--accent);color:#fff;flex:1;min-width:110px;
+}
+button.secondary{background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent);}
+button:disabled{opacity:0.5;}
+
+.status{font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;}
+.status b{color:var(--good);}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px;}
+.tile{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:3/4;border:3px solid transparent;transition:border-color .15s;}
+.tile.speaking{border-color:var(--good);}
+.tile video{width:100%;height:100%;object-fit:cover;}
+.tile .label{position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,0.6);color:#fff;font-size:10.5px;padding:2px 7px;border-radius:8px;}
+.tile .vol{position:absolute;top:5px;right:5px;font-size:10px;color:#fff;background:rgba(0,0,0,0.5);padding:1px 5px;border-radius:6px;font-family:var(--mono);}
+
+.log{max-height:180px;overflow-y:auto;font-size:11px;font-family:var(--mono);background:#0e141b;border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre-wrap;color:var(--ink-soft);}
+</style>
+
+<div class="wrap">
+  <h1>👥 Mesh Group ভিডিও কল টেস্ট (৩-৫ জন)</h1>
+  <p class="sub">প্রতিটা ফোন সরাসরি বাকি সবার সাথে সংযুক্ত হয় — কোনো central media server নেই, শুধু signaling ব্যবহার হচ্ছে (একই VPS)।</p>
+
+  <div class="card">
+    <label class="small">Room কোড (সবাই একই কোড দিন)</label>
+    <div class="row">
+      <input type="text" id="roomInput" placeholder="যেমন: shop1">
+      <button id="joinBtn">যোগ দিন</button>
+    </div>
+    <div class="status" id="statusText">অপেক্ষা করছে...</div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="card">
+    <label class="small">লগ</label>
+    <div id="log" class="log">এখনো কিছু হয়নি।</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+function log(text){
+  const box = $('log');
+  if(box.textContent === 'এখনো কিছু হয়নি।') box.textContent = '';
+  const t = new Date().toLocaleTimeString('bn-BD');
+  box.textContent = `[${t}] ${text}\n` + box.textContent;
+}
+
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'turn:152.228.227.85:3478', username: 'bazarturn', credential: 'Bzr2026TurnPass' },
+];
+
+let ws = null;
+let myId = null;
+let localStream = null;
+const peers = new Map(); // peerId -> { pc, videoEl, analyser, tileEl }
+let audioCtx = null;
+
+function addTile(id, label){
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+  tile.id = `tile-${id}`;
+  tile.innerHTML = `<video autoplay playsinline ${id==='me'?'muted':''}></video><div class="label">${label}</div><div class="vol" id="vol-${id}">-</div>`;
+  $('grid').appendChild(tile);
+  return tile;
+}
+
+function setupVolumeMeter(id, stream){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(stream);
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 512;
+  source.connect(analyser);
+  return analyser;
+}
+
+function monitorVolumes(){
+  let loudestId = null, loudestVal = -1;
+  peers.forEach((p, id) => {
+    if(!p.analyser) return;
+    const data = new Uint8Array(p.analyser.frequencyBinCount);
+    p.analyser.getByteFrequencyData(data);
+    const avg = data.reduce((a,b)=>a+b,0) / data.length;
+    const volEl = document.getElementById(`vol-${id}`);
+    if(volEl) volEl.textContent = Math.round(avg);
+    if(avg > loudestVal && avg > 12){ loudestVal = avg; loudestId = id; } // ১২ = নীরবতা বাদ দেওয়ার threshold
+  });
+  document.querySelectorAll('.tile').forEach(t => t.classList.remove('speaking'));
+  if(loudestId){
+    const t = document.getElementById(`tile-${loudestId}`);
+    if(t) t.classList.add('speaking');
+  }
+  requestAnimationFrame(monitorVolumes);
+}
+
+function createPeerConnection(remoteId, isInitiator){
+  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.onicecandidate = (e) => {
+    if(e.candidate) ws.send(JSON.stringify({ type: 'candidate', target: remoteId, candidate: e.candidate }));
+  };
+  pc.ontrack = (e) => {
+    const p = peers.get(remoteId);
+    if(p && p.videoEl) p.videoEl.srcObject = e.streams[0];
+    if(p && !p.analyser){
+      try{ p.analyser = setupVolumeMeter(remoteId, e.streams[0]); } catch(err){}
+    }
+  };
+  pc.oniceconnectionstatechange = () => log(`[${remoteId.slice(0,5)}] ICE: ${pc.iceConnectionState}`);
+
+  const tile = addTile(remoteId, `ব্যবহারকারী ${remoteId.slice(0,4)}`);
+  const videoEl = tile.querySelector('video');
+  peers.set(remoteId, { pc, videoEl, analyser: null, tileEl: tile });
+
+  if(isInitiator){
+    pc.createOffer().then(offer => {
+      pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: 'offer', target: remoteId, sdp: offer }));
+    });
+  }
+  return pc;
+}
+
+function removePeer(id){
+  const p = peers.get(id);
+  if(p){
+    p.pc.close();
+    if(p.tileEl) p.tileEl.remove();
+    peers.delete(id);
+  }
+}
+
+async function start(){
+  const room = $('roomInput').value.trim();
+  if(!room){ log('আগে room কোড দিন।'); return; }
+  $('joinBtn').disabled = true;
+
+  try{
+    localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
+    addTile('me', 'আপনি');
+    document.querySelector('#tile-me video').srcObject = localStream;
+    log('ক্যামেরা/মাইক অনুমতি পাওয়া গেছে।');
+    try{
+      const myAnalyser = setupVolumeMeter('me', localStream);
+      peers.set('me', { pc: null, videoEl: null, analyser: myAnalyser, tileEl: document.getElementById('tile-me') });
+      requestAnimationFrame(monitorVolumes);
+    } catch(err){}
+  } catch(e){
+    log('ক্যামেরা/মাইক ব্যর্থ: ' + e.message);
+    $('joinBtn').disabled = false;
+    return;
+  }
+
+  // Signaling server সবসময় VPS-এ চলে, পেজ যেখানেই হোস্ট থাকুক না কেন (Vercel/local)
+  const SIGNALING_HOST = 'wss://152.228.227.85:7788';
+  ws = new WebSocket(SIGNALING_HOST);
+
+  ws.onopen = () => { ws.send(JSON.stringify({ type: 'join-group', room })); log('Signaling সার্ভারে সংযুক্ত।'); };
+
+  ws.onmessage = async (event) => {
+    const msg = JSON.parse(event.data);
+
+    if(msg.type === 'joined-group'){
+      myId = msg.id;
+      $('statusText').innerHTML = `সংযুক্ত — আপনার ID: <b>${myId.slice(0,4)}</b>, রুমে মোট: ${msg.existingPeers.length + 1} জন`;
+      log(`Room-এ যোগ দিলেন। আগে থেকে আছে: ${msg.existingPeers.length} জন।`);
+      msg.existingPeers.forEach(pid => createPeerConnection(pid, true));
+    } else if(msg.type === 'peer-joined-group'){
+      log(`নতুন ব্যবহারকারী যোগ দিলেন: ${msg.id.slice(0,4)}`);
+      // নতুন পক্ষ নিজে থেকে offer পাঠাবে, আমরা শুধু অপেক্ষা করবো
+    } else if(msg.type === 'offer'){
+      const pc = createPeerConnection(msg.from, false);
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: 'answer', target: msg.from, sdp: answer }));
+    } else if(msg.type === 'answer'){
+      const p = peers.get(msg.from);
+      if(p) await p.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    } else if(msg.type === 'candidate'){
+      const p = peers.get(msg.from);
+      if(p) { try{ await p.pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(e){} }
+    } else if(msg.type === 'peer-left-group'){
+      log(`চলে গেছেন: ${msg.id.slice(0,4)}`);
+      removePeer(msg.id);
+      $('statusText').innerHTML = `সংযুক্ত — রুমে মোট: ${peers.size} জন`;
+    } else if(msg.type === 'room-full'){
+      log('⚠️ রুম পূর্ণ (সর্বোচ্চ ৫ জন)।');
+    }
+  };
+
+  ws.onerror = () => log('⚠️ Signaling ত্রুটি।');
+}
+
+$('joinBtn').addEventListener('click', start);
+</script>

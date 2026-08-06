@@ -1,0 +1,257 @@
+<meta charset="UTF-8">
+<title>P2P ভিডিও কল টেস্ট</title>
+<style>
+:root{
+  --bg:#ffffff; --surface:#ffffff; --ink:#0f172a; --ink-soft:#334155;
+  --line:#94a3b8; --accent:#0d9488; --accent-bg:#ccfbf1;
+  --warn:#b91c1c; --warn-bg:#fee2e2; --good:#15803d; --good-bg:#dcfce7;
+  --bn: 'Noto Sans Bengali', 'Siyam Rupali', 'Nirmala UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--bn);line-height:1.5;padding:16px 14px 60px;}
+.wrap{max-width:640px;margin:0 auto;}
+h1{font-size:20px;margin:0 0 4px;font-weight:700;}
+.sub{color:var(--ink-soft);font-size:13px;margin:0 0 16px;}
+.card{background:var(--surface);border:1.5px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px;}
+.card h2{font-size:14.5px;margin:0 0 10px;font-weight:700;}
+label.small{font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;font-weight:600;}
+input[type=text]{
+  font-family:inherit;font-size:15px;border:1.5px solid var(--line);border-radius:6px;
+  padding:9px 10px;background:#fff;color:var(--ink);width:100%;
+}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+button{
+  font-family:inherit;font-size:14.5px;font-weight:700;border:none;border-radius:6px;
+  padding:12px 16px;cursor:pointer;background:var(--accent);color:#fff;flex:1;min-width:120px;
+}
+button.secondary{background:var(--accent-bg);color:var(--accent);border:1.5px solid var(--accent);}
+button:disabled{opacity:0.5;}
+
+.status-badge{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;padding:6px 12px;border-radius:20px;margin-bottom:12px;}
+.status-badge.waiting{background:#fef3c7;color:#78350f;}
+.status-badge.connecting{background:#dbeafe;color:#1e3a8a;}
+.status-badge.p2p{background:var(--good-bg);color:var(--good);}
+.status-badge.relay{background:#fed7aa;color:#7c2d12;}
+.status-badge.failed{background:var(--warn-bg);color:var(--warn);}
+.status-badge .dot{width:8px;height:8px;border-radius:50%;background:currentColor;}
+
+.videos{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.video-box{position:relative;background:#111;border-radius:8px;overflow:hidden;aspect-ratio:3/4;}
+.video-box video{width:100%;height:100%;object-fit:cover;}
+.video-box .label{position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,0.6);color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;}
+
+.log{max-height:220px;overflow-y:auto;font-size:11.5px;font-family:var(--mono);background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre-wrap;}
+.statline{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--line);}
+.statline:last-child{border:none;}
+</style>
+
+<div class="wrap">
+  <h1>📹 P2P ভিডিও কল টেস্ট</h1>
+  <p class="sub">Signaling server শুধু দুই ফোনকে পরিচয় করিয়ে দেয় — সরাসরি সংযোগ (P2P) হলে ভিডিও সার্ভার দিয়ে যায় না।</p>
+
+  <div class="card">
+    <h2>⚙️ Room-এ যোগ দিন</h2>
+    <label class="small">Room কোড (দুই ফোনে একই কোড দিন)</label>
+    <div class="row">
+      <input type="text" id="roomInput" placeholder="যেমন: test1" style="flex:1;">
+      <button id="joinBtn">যোগ দিন</button>
+    </div>
+  </div>
+
+  <div id="statusBadge" class="status-badge waiting"><span class="dot"></span> <span id="statusText">অপেক্ষা করছে...</span></div>
+
+  <div class="videos">
+    <div class="video-box">
+      <video id="localVideo" autoplay playsinline muted></video>
+      <div class="label">আপনি</div>
+    </div>
+    <div class="video-box">
+      <video id="remoteVideo" autoplay playsinline></video>
+      <div class="label">অন্য পক্ষ</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📊 সংযোগের বিস্তারিত (টেস্টের আসল ফলাফল এখানে)</h2>
+    <div id="statBox">
+      <div class="statline"><span>সংযোগের ধরন</span><span id="connType">—</span></div>
+      <div class="statline"><span>Local candidate</span><span id="localCand">—</span></div>
+      <div class="statline"><span>Remote candidate</span><span id="remoteCand">—</span></div>
+      <div class="statline"><span>RTT (round-trip time)</span><span id="rtt">—</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📋 লগ</h2>
+    <div id="log" class="log">এখনো কিছু হয়নি।</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const logBox = $('log');
+function log(text){
+  if(logBox.textContent === 'এখনো কিছু হয়নি।') logBox.textContent = '';
+  const t = new Date().toLocaleTimeString('bn-BD');
+  logBox.textContent = `[${t}] ${text}\n` + logBox.textContent;
+}
+
+function setStatus(cls, text){
+  const badge = $('statusBadge');
+  badge.className = `status-badge ${cls}`;
+  $('statusText').textContent = text;
+}
+
+let ws = null;
+let pc = null;
+let localStream = null;
+let role = null;
+let statsTimer = null;
+
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  // নিজস্ব coturn TURN server (France VPS-এ চলছে) — P2P ব্যর্থ হলে এখান দিয়ে relay হবে
+  {
+    urls: 'turn:152.228.227.85:3478',
+    username: 'bazarturn',
+    credential: 'Bzr2026TurnPass',
+  },
+];
+
+async function start(){
+  const room = $('roomInput').value.trim();
+  if(!room){ log('আগে room কোড দিন।'); return; }
+  $('joinBtn').disabled = true;
+
+  try{
+    localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
+    $('localVideo').srcObject = localStream;
+    log('ক্যামেরা/মাইক অনুমতি পাওয়া গেছে।');
+  } catch(e){
+    log('ক্যামেরা/মাইক অ্যাক্সেস ব্যর্থ: ' + e.message);
+    $('joinBtn').disabled = false;
+    return;
+  }
+
+  // Signaling server সবসময় VPS-এ চলে, পেজ যেখানেই হোস্ট থাকুক না কেন (Vercel/local)
+  const SIGNALING_HOST = 'wss://152.228.227.85:7788';
+  ws = new WebSocket(SIGNALING_HOST);
+
+  ws.onopen = () => {
+    log('Signaling server-এর সাথে সংযুক্ত।');
+    ws.send(JSON.stringify({ type: 'join', room }));
+  };
+
+  ws.onmessage = async (event) => {
+    const msg = JSON.parse(event.data);
+
+    if(msg.type === 'joined'){
+      role = msg.role;
+      log(`Room-এ যোগ দিলেন, ভূমিকা: ${role}`);
+      setStatus('waiting', role === 'caller' ? 'অন্য পক্ষের জন্য অপেক্ষা করছি...' : 'সংযুক্ত হচ্ছে...');
+      setupPeerConnection();
+      if(role === 'callee'){
+        // অন্য পক্ষ ইতিমধ্যে room-এ আছে, offer পাঠানোর অনুরোধ জানাও
+      }
+    } else if(msg.type === 'room-full'){
+      log('⚠️ এই room-এ ইতিমধ্যে ২ জন আছে। অন্য room কোড ব্যবহার করুন।');
+      setStatus('failed', 'Room পূর্ণ');
+    } else if(msg.type === 'peer-joined'){
+      log('অন্য পক্ষ যোগ দিয়েছে।');
+      if(role === 'caller') await makeOffer();
+    } else if(msg.type === 'offer'){
+      log('Offer পাওয়া গেছে।');
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: 'answer', sdp: answer }));
+      log('Answer পাঠানো হলো।');
+    } else if(msg.type === 'answer'){
+      log('Answer পাওয়া গেছে।');
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    } else if(msg.type === 'candidate'){
+      try{ await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(e){}
+    } else if(msg.type === 'peer-left'){
+      log('অন্য পক্ষ চলে গেছে।');
+      setStatus('waiting', 'অন্য পক্ষ চলে গেছে');
+      $('remoteVideo').srcObject = null;
+    }
+  };
+
+  ws.onerror = () => log('⚠️ Signaling সংযোগে ত্রুটি।');
+}
+
+function setupPeerConnection(){
+  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.onicecandidate = (event) => {
+    if(event.candidate){
+      ws.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+    }
+  };
+
+  pc.ontrack = (event) => {
+    $('remoteVideo').srcObject = event.streams[0];
+    log('ভিডিও/অডিও স্ট্রিম পাওয়া গেছে।');
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    log(`ICE state: ${pc.iceConnectionState}`);
+    if(pc.iceConnectionState === 'checking'){
+      setStatus('connecting', 'সংযোগ পরীক্ষা করা হচ্ছে...');
+    } else if(pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed'){
+      startStatsMonitor();
+    } else if(pc.iceConnectionState === 'failed'){
+      setStatus('failed', 'সংযোগ ব্যর্থ (TURN server ছাড়া এই নেটওয়ার্কে সরাসরি সংযোগ সম্ভব হলো না)');
+    } else if(pc.iceConnectionState === 'disconnected'){
+      setStatus('waiting', 'সংযোগ বিচ্ছিন্ন হয়েছে');
+    }
+  };
+}
+
+async function makeOffer(){
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  ws.send(JSON.stringify({ type: 'offer', sdp: offer }));
+  log('Offer পাঠানো হলো।');
+}
+
+function startStatsMonitor(){
+  clearInterval(statsTimer);
+  statsTimer = setInterval(async () => {
+    const stats = await pc.getStats();
+    let selectedPair = null;
+    stats.forEach(report => {
+      if(report.type === 'candidate-pair' && report.state === 'succeeded' && report.nominated){
+        selectedPair = report;
+      }
+    });
+    if(!selectedPair) return;
+
+    let localType = '', remoteType = '';
+    stats.forEach(report => {
+      if(report.id === selectedPair.localCandidateId) localType = report.candidateType;
+      if(report.id === selectedPair.remoteCandidateId) remoteType = report.candidateType;
+    });
+
+    $('localCand').textContent = localType || '—';
+    $('remoteCand').textContent = remoteType || '—';
+    $('rtt').textContent = selectedPair.currentRoundTripTime != null ? `${Math.round(selectedPair.currentRoundTripTime*1000)}ms` : '—';
+
+    const isRelay = localType === 'relay' || remoteType === 'relay';
+    if(isRelay){
+      $('connType').textContent = '🔶 TURN Relay (সরাসরি সম্ভব হয়নি)';
+      setStatus('relay', 'সংযুক্ত — TURN relay দিয়ে (কোনো TURN server নেই, তাই এটা আসলে নাও ঘটতে পারে)');
+    } else {
+      $('connType').textContent = '✅ Direct P2P (সরাসরি সংযোগ!)';
+      setStatus('p2p', 'সংযুক্ত — সরাসরি P2P, সার্ভার দিয়ে ভিডিও যাচ্ছে না');
+    }
+  }, 2000);
+}
+
+$('joinBtn').addEventListener('click', start);
+</script>
